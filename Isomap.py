@@ -110,3 +110,46 @@ class Isomap:
         r = np.corrcoef(self.dist_matrix[tri], embedded_distances[tri])[0, 1]
         #returns r^2 value
         return 1.0 - r**2
+
+
+
+def main():
+    n_samples = 1000
+    X, t = datasets.make_swiss_roll(n_samples = n_samples, noise = 0.05, random_state = 0)
+
+    rng = np.random.default_rng(0)
+    perm = rng.permutation(n_samples)
+    test_idx, train_idx = perm[:100], perm[100:]
+    X_train, t_train = X[train_idx], t[train_idx]
+    X_test, t_test = X[test_idx], t[test_idx]
+
+    isomap = Isomap(n_neighbors = 10, n_components = 2)
+    Y_train = isomap.fit_transform(X_train)
+    Y_test = isomap.transform(X_test)
+
+    print(f"Training points:     {X_train.shape[0]}")
+    print(f"Top eigenvalues:     {isomap.eigenvalues}")
+    print(f"Residual variance:   {isomap.reconstruction_error():.4f}")
+
+    fig = plt.figure(figsize=(13, 4.5))
+    ax = fig.add_subplot(1, 3, 1, projection="3d")
+    ax.scatter(X_train[:, 0], X_train[:, 1], X_train[:, 2], c = t_train, cmap="Spectral", s = 8)
+    ax.set_title("Swiss Roll Isomap")
+
+    ax = fig.add_subplot(1, 3, 2)
+    ax.scatter(Y_train[:, 0], Y_train[:, 1], Y_train[:, 2], c = t_train, cmap="Spectral", s = 8)
+    ax.set_title("Isomap Embedding")
+    ax.set_aspect("equal", adjustable="datalim")
+
+    ax = fig.add_subplot(1, 3, 3)
+    ax.scatter(Y_train[:, 0], Y_train[:, 1], c="lightgray", s = 6, label = "train")
+    ax.scatter(Y_test[:, 0], Y_test[:, 1], c = t_test, cmap="Spectral", s = 18, edgecolor = "k", linewidths = 0.4, label = "held-out")
+    ax.set_title("Out of Sample Points")
+    ax.legend()
+    ax.set_aspect("equal", adjustable = "datalim")
+
+    plt.tight_layout()
+    plt.savefig("Isomap_Swiss_Roll.png", dpi = 150)
+
+if __name__ == "__main__":
+    main()
