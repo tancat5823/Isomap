@@ -27,7 +27,7 @@ class Isomap:
         np.fill_diagonal(weighted, 0.0)                                        #The diagonal is the distance from a point to itself, which is 0
         return weighted
 
-    def floyd_warshall(weighted):
+    def floyd_warshall(self, weighted):
         """
         find shortest path between pairs and generate nxn geodesic distance matrix
         """
@@ -53,6 +53,7 @@ class Isomap:
         distances = np.sqrt(np.maximum(distances, 0.0))
         self.distances = distances
         weighted = self.knn(distances)                            # generate graph weight matrix from the distances
+        self.graph = weighted.copy()
         weighted = self.floyd_warshall(weighted)                  # convert to shortes path on neighbor edges
         #If any infinite values remain, points may not be able to reach each other which would cause MDS to fail
         if np.isinf(weighted).any():
@@ -73,12 +74,15 @@ class Isomap:
         self.embedding = self.eigenvectors * np.sqrt(self.eigenvalues) # nxd matrix of the lowered demension coordinates
         return self
 
+    def fit_transform(self, X):
+        return self.MDS(X).embedding
+
     def transform(self, X_new):
         """
         Add new points to the embedding and generates their lower dimension coordinates
         """
         X_new = np.asarray(X_new, dtype = float)
-        distances = self.distances
+        distances = np.sqrt(np.maximum((X_new**2).sum(1)[:, None] + (self.X_train**2).sum(1)[None, :] - 2.0 * X_new @ self.X_train.T, 0.0))
         #find each new points k nearest training points
         neighbors = np.argsort(distances, axis = 1)[:, : self.n_neighbors]
         #m new points, n training points
@@ -88,7 +92,7 @@ class Isomap:
         #estimate distance from new point to training points
         for i in range(m):
             distance_i = distances[i, neighbors[i]]
-            new_weights = (distance_i[:, None] + self.dist_matrix[neighbors[i]]).min(axis = 0)
+            new_weights[i] = (distance_i[:, None] + self.dist_matrix[neighbors[i]]).min(axis = 0)
         
         #double centering
         new_K = -0.5 * new_weights**2
@@ -111,39 +115,82 @@ class Isomap:
         #returns r^2 value
         return 1.0 - r**2
 
+    def shortest_path(self, i, j):
+        """
+        Finds the shortest path between two points in a dataset.
+        """
+        path = [i]
+        while path[-1] != j and len(path) <= self.graph.shape[0]:
+            curve = path[-1]
+            neighbors = np.where(np.isfinite(self.graph[curve]) & (np.arange(self.graph.shape[0]) != curve))[0]
+            path.append(neighbors[np.argmin(self.graph[curve, neighbors] + self.dist_matrix[neighbors, j])])
+        return path
+
+    def true_geodesic(self, x_a, t_a, x_b, t_b, n_pts = 200):
+        """
+        Maps geodesic curve between two points in the dataset.
+        """
+        s_a, s_b = 0.5 * (t_a * np.sqrt(1 + t_a**2) + np.arcsinh(t_a)), 0.5 * (t_b * np.sqrt(1 + t_b**2) + np.arcsinh(t_b))
+        h_a, h_b = x_a[1], x_b[1]
+        s = np.linspace(s_a, s_b, n_pts)
+        h = np.linspace(h_a, h_b, n_pts)
+        t_grid = np.linspace(0, 15, 20000)
+        t_line = np.interp(s, 0.5 * (t_grid * np.sqrt(1 + t_grid**2) + np.arcsinh(t_grid)), t_grid)
+        curve = np.column_stack((t_line * np.cos(t_line), h, t_line * np.sin(t_line)))
+        return curve, np.hypot(s_b - s_a, h_b - h_a)
 
 
 def main():
+    #1000 samples from the swiss roll dataset
     n_samples = 1000
     X, t = datasets.make_swiss_roll(n_samples = n_samples, noise = 0.05, random_state = 0)
 
+    #train on 900 points and test on 100
     rng = np.random.default_rng(0)
     perm = rng.permutation(n_samples)
     test_idx, train_idx = perm[:100], perm[100:]
     X_train, t_train = X[train_idx], t[train_idx]
     X_test, t_test = X[test_idx], t[test_idx]
 
+    #run the isomap
     isomap = Isomap(n_neighbors = 10, n_components = 2)
     Y_train = isomap.fit_transform(X_train)
     Y_test = isomap.transform(X_test)
 
-    print(f"Training points:     {X_train.shape[0]}")
-    print(f"Top eigenvalues:     {isomap.eigenvalues}")
-    print(f"Residual variance:   {isomap.reconstruction_error():.4f}")
+    #useful info
+    print(f"Top eigenvalues:        {isomap.eigenvalues}")
+    print(f"Residual variance:      {isomap.reconstruction_error():.4f}")
 
+
+    a, b = np.argmin(t_train), np.argmax(t_train)
+    path = isomap.shortest_path(a, b)
+    curve, true_len = isomap.true_geodesic(X_train[a], t_train[a], X_train[b], t_train[b])
+    print(f"Stright line distance:  {np.linalg.norm(X_train[a] - X_train[b]):.2f}")
+    print(f"Isomap graph path:      {isomap.dist_matrix[a, b]:.2f}")
+    print(f"True geodesic distance: {true_len:.2f}")
+    print(f"")
+    
+    #make graph
     fig = plt.figure(figsize=(13, 4.5))
     ax = fig.add_subplot(1, 3, 1, projection="3d")
     ax.scatter(X_train[:, 0], X_train[:, 1], X_train[:, 2], c = t_train, cmap="Spectral", s = 8)
+    ax.plot(*curve.T, "k-", lw = 2.5, label = "true geodesic")
+    ax.plot(*X_train[path].T, "r--", lw = 1.5, label = "Isomap graph path")
+    ax.plot(*X_train[[a, b]].T, ":", color = "gray", lw = 1.5, label = "straight line")
+    ax.legend(fontsize = 7)
     ax.set_title("Swiss Roll Isomap")
 
     ax = fig.add_subplot(1, 3, 2)
-    ax.scatter(Y_train[:, 0], Y_train[:, 1], Y_train[:, 2], c = t_train, cmap="Spectral", s = 8)
+    ax.scatter(Y_train[:, 0], Y_train[:, 1], c = "#1411EE", s = 8)
+    ax.plot(*Y_train[path].T, "r--", lw = 1.5, label = "Graph path")
+    ax.plot(*Y_train[[a, b]].T, "k-", lw = 1.5, label = "Straight line in embedding")
+    ax.legend(fontsize = 7)
     ax.set_title("Isomap Embedding")
     ax.set_aspect("equal", adjustable="datalim")
 
     ax = fig.add_subplot(1, 3, 3)
     ax.scatter(Y_train[:, 0], Y_train[:, 1], c="lightgray", s = 6, label = "train")
-    ax.scatter(Y_test[:, 0], Y_test[:, 1], c = t_test, cmap="Spectral", s = 18, edgecolor = "k", linewidths = 0.4, label = "held-out")
+    ax.scatter(Y_test[:, 0], Y_test[:, 1], c = "#EE3611", s = 18, edgecolor = "k", linewidths = 0.4, label = "held-out")
     ax.set_title("Out of Sample Points")
     ax.legend()
     ax.set_aspect("equal", adjustable = "datalim")
