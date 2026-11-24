@@ -178,7 +178,7 @@ def main():
     ax.plot(*X_train[path].T, "r--", lw = 1.5, label = "Isomap graph path")
     ax.plot(*X_train[[a, b]].T, ":", color = "gray", lw = 1.5, label = "straight line")
     ax.legend(fontsize = 7)
-    ax.set_title("Distance Projection onto Swiss-Roll")
+    ax.set_title("Distance Projection onto Swiss Roll")
 
     ax = fig.add_subplot(1, 3, 2)
     ax.scatter(Y_train[:, 0], Y_train[:, 1], c = "#1411EE", s = 8)
