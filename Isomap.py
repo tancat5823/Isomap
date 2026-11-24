@@ -173,7 +173,7 @@ def main():
     #make graph
     fig = plt.figure(figsize=(13, 4.5))
     ax = fig.add_subplot(1, 3, 1, projection="3d")
-    ax.scatter(X_train[:, 0], X_train[:, 1], X_train[:, 2], c = t_train, cmap="Spectral", s = 8)
+    ax.scatter(X_train[:, 0], X_train[:, 1], X_train[:, 2], c = "#008000", s = 8)
     ax.plot(*curve.T, "k-", lw = 2.5, label = "true geodesic")
     ax.plot(*X_train[path].T, "r--", lw = 1.5, label = "Isomap graph path")
     ax.plot(*X_train[[a, b]].T, ":", color = "gray", lw = 1.5, label = "straight line")
